@@ -1,10 +1,27 @@
 #include "raylib.h"
 #include "raymath.h"
+#include <stdio.h>
 #include <stdlib.h>
 
-#define PIXEL_SIZE 64
-#define GAME_DIMENSIONS 10
-#define MOVE_LATENCY 0.25f
+#define MAX_INPUT_CHARS 4
+typedef struct {
+  int pixelSize;
+  int dimensions;
+  int latency_ms;
+} GameSettings;
+
+static GameSettings Settings = {
+    .pixelSize = 64,
+    .dimensions = 10,
+    .latency_ms = 250,
+};
+
+typedef struct {
+  char buf[MAX_INPUT_CHARS + 1]; // Allow for null-terminator
+  int len;
+} FreeText;
+
+static FreeText freeText = {.buf = "\0", .len = 0};
 
 #define FOOTER_WIDTH 150
 #define FOOTER_HEIGHT 100
@@ -30,17 +47,18 @@ typedef struct {
 void EntityClamp(Entity *self) {
   self->position =
       Vector2Clamp(self->position, (Vector2){0, 0},
-                   (Vector2){GAME_DIMENSIONS - 1, GAME_DIMENSIONS - 1});
+                   (Vector2){Settings.dimensions - 1, Settings.dimensions - 1});
 }
 
 bool BoundsCollisionCheck(Vector2 pos) {
-  return pos.x < 0 || pos.y < 0 || pos.x > GAME_DIMENSIONS ||
-         pos.y > GAME_DIMENSIONS;
+  return pos.x < 0 || pos.y < 0 || pos.x > Settings.dimensions ||
+         pos.y > Settings.dimensions;
 }
 
 void EntityDraw(Entity *self) {
-  DrawRectangle(self->position.x * PIXEL_SIZE, self->position.y * PIXEL_SIZE,
-                PIXEL_SIZE, PIXEL_SIZE, self->color);
+  DrawRectangle(self->position.x * Settings.pixelSize,
+                self->position.y * Settings.pixelSize, Settings.pixelSize,
+                Settings.pixelSize, self->color);
 }
 
 bool EntityCollisionCheck(Entity *a, Vector2 pos) {
@@ -136,7 +154,7 @@ void SnakeUpdate(Snake *self, float delta) {
 
   // only run every BoundsCollisionCheck seconds
   if (self->moveTimer <= 0) {
-    self->moveTimer = MOVE_LATENCY;
+    self->moveTimer = Settings.latency_ms / 1000.0f;
     SnakeMove(self, self->dir);
   }
 
@@ -169,15 +187,15 @@ void SnakeEat(Snake *self, Entity *food) {
       tail->next->next = NULL;
     }
 
-    int overlaps = 1;
+    bool overlaps = true;
     while (overlaps) {
-      food->position = (Vector2){GetRandomValue(0, GAME_DIMENSIONS - 1),
-                                 GetRandomValue(1, GAME_DIMENSIONS - 1)};
+      food->position = (Vector2){GetRandomValue(0, Settings.dimensions - 1),
+                                 GetRandomValue(1, Settings.dimensions - 1)};
       // check if the food is not on the snake (or any tail part)
       const Vector2 pos = self->entity.position;
       if (!EntityCollisionCheck(food, pos) &&
           !TailCollisionCheck(self->tail, food->position)) {
-        overlaps = 0;
+        overlaps = false;
         break;
       }
     }
@@ -189,7 +207,7 @@ void SnakeDraw(Snake *self) {
   const Color c2 = {225, 192, 252, 255};
   EntityDraw(&self->entity);
   Tail *tail = self->tail;
-  int useDefaultColor = 1;
+  bool useDefaultColor = true;
   Vector2 lastPos = self->entity.position;
   while (tail) {
     useDefaultColor = !useDefaultColor;
@@ -198,26 +216,55 @@ void SnakeDraw(Snake *self) {
     }
     lastPos = tail->position;
     Color c = useDefaultColor ? c1 : c2;
-    DrawRectangle(tail->position.x * PIXEL_SIZE, tail->position.y * PIXEL_SIZE,
-                  PIXEL_SIZE, PIXEL_SIZE, c);
+    DrawRectangle(tail->position.x * Settings.pixelSize,
+                  tail->position.y * Settings.pixelSize, Settings.pixelSize,
+                  Settings.pixelSize, c);
     tail = tail->next;
   }
+}
+
+void SetScreenSize(int dimensions, int pixelSize) {
+  const int width = fmax(pixelSize * dimensions, FOOTER_WIDTH);
+  const int height = pixelSize * dimensions + FOOTER_HEIGHT;
+  SetWindowSize(width, height);
+}
+
+bool InputFieldInt(const char *title, int *value, Rectangle rect) {
+  DrawText(title, rect.x, GetScreenHeight() - FOOTER_HEIGHT + 25, 10, BLACK);
+  int v = *value;
+
+  DrawRectangleRec(rect, LIGHTGRAY);
+  bool f = CheckCollisionPointRec(GetMousePosition(), rect);
+  if (f) {
+    DrawRectangleLinesEx(rect, 2, RED);
+    int num = (int)fmax(atoi(freeText.buf), 1);
+    v = num;
+  } else {
+    DrawRectangleLinesEx(rect, 2, BLACK);
+  }
+  DrawText(TextFormat("%i", v), rect.x + 10, rect.y + 5, 20, BLACK);
+  *value = v;
+  return f;
+}
+
+bool SettingsPending(GameSettings *a, GameSettings *b) {
+  return a->dimensions != b->dimensions || a->pixelSize != b->pixelSize ||
+         a->latency_ms != b->latency_ms;
 }
 
 //------------------------------------------------------------------------------------
 // Program main entry point
 //------------------------------------------------------------------------------------
 int main(void) {
-  // Initialization
-  //--------------------------------------------------------------------------------------
-  const int screenWidth = fmax(PIXEL_SIZE * GAME_DIMENSIONS, FOOTER_WIDTH);
-  const int screenHeight = PIXEL_SIZE * GAME_DIMENSIONS + FOOTER_HEIGHT;
 
-  Rectangle inputRect = {10, screenHeight - FOOTER_HEIGHT + 40, 200, 25};
+  GameSettings tempSettings = Settings;
+
+  bool mouseOnText = false;
 
   const Color COLOR_GRASS = (Color){0, 255, 0, 255};
 
-  InitWindow(screenWidth, screenHeight, "Snake");
+  InitWindow(fmax(Settings.pixelSize * Settings.dimensions, FOOTER_WIDTH),
+             Settings.pixelSize * Settings.dimensions + FOOTER_HEIGHT, "Snake");
 
   SetTargetFPS(60); // Set our game to run at 60 frames-per-second
   //--------------------------------------------------------------------------------------
@@ -237,33 +284,89 @@ int main(void) {
   // Main game loop
   while (!WindowShouldClose()) // Detect window close button or ESC key
   {
-
     // get delta time
     float delta = GetFrameTime();
+
+    Rectangle inputRectDimensions = {60, GetScreenHeight() - FOOTER_HEIGHT + 40,
+                                     70, 25};
+
+    Rectangle inputRectPixelSize = {150, GetScreenHeight() - FOOTER_HEIGHT + 40,
+                                    70, 25};
+
+    Rectangle inputRectLatency = {250, GetScreenHeight() - FOOTER_HEIGHT + 40,
+                                  70, 25};
 
     //----------------------------------------------------------------------------------
     // Update
     SnakeUpdate(&player, delta);
     SnakeEat(&player, &fruit);
+
+    if (mouseOnText) {
+      // Set the window's cursor to the I-Beam
+      SetMouseCursor(MOUSE_CURSOR_IBEAM);
+
+      // Get char pressed (unicode character) on the queue
+      int key = GetCharPressed();
+
+      // Check if more characters have been pressed on the same frame
+      while (key > 0) {
+        // NOTE: Only allow number keys
+        if ((key >= '0') && (key <= '9') && (freeText.len < MAX_INPUT_CHARS)) {
+          freeText.buf[freeText.len] = (char)key;
+          freeText.buf[freeText.len + 1] =
+              '\0'; // Add null terminator at the end of the string.
+          freeText.len++;
+        }
+
+        key = GetCharPressed(); // Check next character in the queue
+      }
+
+      if (IsKeyPressed(KEY_BACKSPACE)) {
+        freeText.len--;
+        if (freeText.len < 0)
+          freeText.len = 0;
+        freeText.buf[freeText.len] = '\0';
+      }
+    } else
+      SetMouseCursor(MOUSE_CURSOR_DEFAULT);
     // Draw
     //----------------------------------------------------------------------------------
     BeginDrawing();
 
-    ClearBackground(COLOR_GRASS);
+    ClearBackground(BLACK);
+
+    DrawRectangle(0, 0, Settings.pixelSize * Settings.dimensions,
+                  Settings.pixelSize * Settings.dimensions, COLOR_GRASS);
 
     EntityDraw(&fruit);
 
     SnakeDraw(&player);
 
-    DrawRectangle(0, screenHeight - FOOTER_HEIGHT, screenWidth, FOOTER_HEIGHT,
-                  BLACK);
-    DrawRectangle(0, screenHeight - FOOTER_HEIGHT + FOOTER_MARGIN, screenWidth,
-                  FOOTER_HEIGHT - FOOTER_MARGIN, RAYWHITE);
+    DrawRectangle(0, GetScreenHeight() - FOOTER_HEIGHT, GetScreenWidth(),
+                  FOOTER_HEIGHT, BLACK);
+    DrawRectangle(0, GetScreenHeight() - FOOTER_HEIGHT + FOOTER_MARGIN,
+                  GetScreenWidth(), FOOTER_HEIGHT - FOOTER_MARGIN, RAYWHITE);
 
-    // DrawText(TextFormat("Points: %d", player.points), 10,
-    //          screenHeight - FOOTER_HEIGHT + 10, 20, BLACK);
+    bool f1 = InputFieldInt("Dimensions", &tempSettings.dimensions,
+                            inputRectDimensions);
 
-    DrawRectangleRec(inputRect, LIGHTGRAY);
+    bool f2 = InputFieldInt("Pixel Size", &tempSettings.pixelSize,
+                            inputRectPixelSize);
+
+    bool f3 = InputFieldInt("Move Latency", &tempSettings.latency_ms,
+                            inputRectLatency);
+
+    mouseOnText = f1 || f2 || f3;
+
+    if (!mouseOnText) {
+      freeText.buf[0] = '\0';
+      freeText.len = 0;
+    }
+
+    if (SettingsPending(&Settings, &tempSettings)) {
+      DrawText("Press [ENTER] to apply, [R] to Reset", 10,
+               GetScreenHeight() - 20, 20, BLACK);
+    }
 
     EndDrawing();
     //----------------------------------------------------------------------------------
