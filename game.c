@@ -23,7 +23,7 @@ typedef struct {
 
 static FreeText freeText = {.buf = "\0", .len = 0};
 
-#define FOOTER_WIDTH 150
+#define FOOTER_WIDTH 300
 #define FOOTER_HEIGHT 100
 #define FOOTER_MARGIN 10
 
@@ -239,10 +239,13 @@ bool InputFieldInt(const char *title, int *value, Rectangle rect) {
     DrawRectangleLinesEx(rect, 2, RED);
     int num = (int)fmax(atoi(freeText.buf), 1);
     v = num;
+    DrawText(TextFormat("%s", freeText.buf), rect.x + 10, rect.y + 5, 20,
+             BLACK);
   } else {
     DrawRectangleLinesEx(rect, 2, BLACK);
+    DrawText(TextFormat("%i", v), rect.x + 10, rect.y + 5, 20, BLACK);
   }
-  DrawText(TextFormat("%i", v), rect.x + 10, rect.y + 5, 20, BLACK);
+
   *value = v;
   return f;
 }
@@ -258,6 +261,12 @@ bool SettingsPending(GameSettings *a, GameSettings *b) {
 int main(void) {
 
   GameSettings tempSettings = Settings;
+
+  GameSettings defaultSettings = {
+      .pixelSize = 64,
+      .dimensions = 10,
+      .latency_ms = 250,
+  };
 
   bool mouseOnText = false;
 
@@ -287,13 +296,13 @@ int main(void) {
     // get delta time
     float delta = GetFrameTime();
 
-    Rectangle inputRectDimensions = {60, GetScreenHeight() - FOOTER_HEIGHT + 40,
-                                     70, 25};
-
-    Rectangle inputRectPixelSize = {150, GetScreenHeight() - FOOTER_HEIGHT + 40,
+    Rectangle inputRectPixelSize = {10, GetScreenHeight() - FOOTER_HEIGHT + 40,
                                     70, 25};
 
-    Rectangle inputRectLatency = {250, GetScreenHeight() - FOOTER_HEIGHT + 40,
+    Rectangle inputRectDimensions = {
+        100, GetScreenHeight() - FOOTER_HEIGHT + 40, 70, 25};
+
+    Rectangle inputRectLatency = {200, GetScreenHeight() - FOOTER_HEIGHT + 40,
                                   70, 25};
 
     //----------------------------------------------------------------------------------
@@ -347,13 +356,13 @@ int main(void) {
     DrawRectangle(0, GetScreenHeight() - FOOTER_HEIGHT + FOOTER_MARGIN,
                   GetScreenWidth(), FOOTER_HEIGHT - FOOTER_MARGIN, RAYWHITE);
 
-    bool f1 = InputFieldInt("Dimensions", &tempSettings.dimensions,
-                            inputRectDimensions);
-
-    bool f2 = InputFieldInt("Pixel Size", &tempSettings.pixelSize,
+    bool f1 = InputFieldInt("Pixel Size", &tempSettings.pixelSize,
                             inputRectPixelSize);
 
-    bool f3 = InputFieldInt("Move Latency", &tempSettings.latency_ms,
+    bool f2 = InputFieldInt("Level Size", &tempSettings.dimensions,
+                            inputRectDimensions);
+
+    bool f3 = InputFieldInt("Move Latency (ms)", &tempSettings.latency_ms,
                             inputRectLatency);
 
     mouseOnText = f1 || f2 || f3;
@@ -364,8 +373,21 @@ int main(void) {
     }
 
     if (SettingsPending(&Settings, &tempSettings)) {
-      DrawText("Press [ENTER] to apply, [R] to Reset", 10,
+      DrawText("Press [ENTER] to apply, [C] to clear, [R] to Reset", 10,
                GetScreenHeight() - 20, 20, BLACK);
+
+      if (IsKeyPressed(KEY_ENTER)) {
+        Settings = tempSettings;
+        SetScreenSize(Settings.dimensions, Settings.pixelSize);
+      } else if (IsKeyPressed(KEY_C)) {
+        tempSettings = Settings;
+      }
+    }
+    if (IsKeyPressed(KEY_R)) {
+      Settings = defaultSettings;
+      SetScreenSize(Settings.dimensions, Settings.pixelSize);
+      tempSettings = Settings;
+      printf("Reset\n");
     }
 
     EndDrawing();
