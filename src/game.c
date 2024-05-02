@@ -144,6 +144,34 @@ void SnakeMove(Snake *self, enum Direction dir) {
   self->entity.position = pos;
 }
 
+void SnakeReset(Snake *self) {
+  self->entity.position = (Vector2){5, 5};
+  self->dir = DIR_RIGHT;
+  self->points = 0;
+  TailFree(self->tail);
+  self->tail = NULL;
+}
+
+void FoodReset(Entity *food, Snake *snake) {
+  bool overlaps = true;
+  while (overlaps) {
+    food->position = (Vector2){GetRandomValue(0, Settings.dimensions - 1),
+                               GetRandomValue(1, Settings.dimensions - 1)};
+    // check if the food is not on the snake (or any tail part)
+    const Vector2 pos = snake->entity.position;
+    if (!EntityCollisionCheck(food, pos) &&
+        !TailCollisionCheck(snake->tail, food->position)) {
+      overlaps = false;
+      break;
+    }
+  }
+}
+
+void ResetEntities(Entity *food, Snake *snake) {
+  FoodReset(food, snake);
+  SnakeReset(snake);
+}
+
 void SnakeUpdate(Snake *self, float delta) {
   self->moveTimer -= delta;
 
@@ -162,10 +190,7 @@ void SnakeUpdate(Snake *self, float delta) {
   if (TailCollisionCheck(self->tail, e->position) ||
       (self->points > 0 && isInvertedDirection(self->dir, lastDir)) ||
       BoundsCollisionCheck(e->position)) {
-    self->points = 0;
-    self->entity.position = (Vector2){5, 5};
-    TailFree(self->tail);
-    self->tail = NULL; // the player stuct needs this to be NULL too
+    SnakeReset(self);
   }
 }
 
@@ -187,18 +212,7 @@ void SnakeEat(Snake *self, Entity *food) {
       tail->next->next = NULL;
     }
 
-    bool overlaps = true;
-    while (overlaps) {
-      food->position = (Vector2){GetRandomValue(0, Settings.dimensions - 1),
-                                 GetRandomValue(1, Settings.dimensions - 1)};
-      // check if the food is not on the snake (or any tail part)
-      const Vector2 pos = self->entity.position;
-      if (!EntityCollisionCheck(food, pos) &&
-          !TailCollisionCheck(self->tail, food->position)) {
-        overlaps = false;
-        break;
-      }
-    }
+    FoodReset(food, self);
   }
 }
 
@@ -379,6 +393,7 @@ int main(void) {
       if (IsKeyPressed(KEY_ENTER)) {
         Settings = tempSettings;
         SetScreenSize(Settings.dimensions, Settings.pixelSize);
+        ResetEntities(&fruit, &player);
       } else if (IsKeyPressed(KEY_C)) {
         tempSettings = Settings;
       }
@@ -386,6 +401,7 @@ int main(void) {
     if (IsKeyPressed(KEY_R)) {
       Settings = defaultSettings;
       SetScreenSize(Settings.dimensions, Settings.pixelSize);
+      ResetEntities(&fruit, &player);
       tempSettings = Settings;
       printf("Reset\n");
     }
