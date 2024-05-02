@@ -2,34 +2,49 @@
 #include "raymath.h"
 #include <stdlib.h>
 
-#define BLOCK_SIZE 32
+#define PIXEL_SIZE 64
+#define GAME_DIMENSIONS 10
+#define MOVE_LATENCY 0.25f
+
+#define FOOTER_WIDTH 150
+#define FOOTER_HEIGHT 100
+#define FOOTER_MARGIN 10
+
+// Check if any key is pressed
+// NOTE: We limit keys check to keys between 32 (KEY_SPACE) and 126
+bool IsAnyKeyPressed() {
+  bool keyPressed = false;
+  int key = GetKeyPressed();
+
+  if ((key >= 32) && (key <= 126))
+    keyPressed = true;
+
+  return keyPressed;
+}
 
 typedef struct {
   Vector2 position;
   Color color;
 } Entity;
 
-void EntityClamp(Entity *self, const Rectangle bounds) {
-  self->position = Vector2Clamp(
-      self->position, (Vector2){bounds.x, bounds.y},
-      (Vector2){bounds.width - BLOCK_SIZE, bounds.height - BLOCK_SIZE});
+void EntityClamp(Entity *self) {
+  self->position =
+      Vector2Clamp(self->position, (Vector2){0, 0},
+                   (Vector2){GAME_DIMENSIONS - 1, GAME_DIMENSIONS - 1});
 }
 
-bool BoundsCollisionCheck(Vector2 pos, const Rectangle bounds) {
-  return pos.x < bounds.x || pos.y < bounds.y ||
-         pos.x + BLOCK_SIZE > bounds.width ||
-         pos.y + BLOCK_SIZE > bounds.height;
+bool BoundsCollisionCheck(Vector2 pos) {
+  return pos.x < 0 || pos.y < 0 || pos.x > GAME_DIMENSIONS ||
+         pos.y > GAME_DIMENSIONS;
 }
 
 void EntityDraw(Entity *self) {
-  DrawRectangle(self->position.x, self->position.y, BLOCK_SIZE, BLOCK_SIZE,
-                self->color);
+  DrawRectangle(self->position.x * PIXEL_SIZE, self->position.y * PIXEL_SIZE,
+                PIXEL_SIZE, PIXEL_SIZE, self->color);
 }
 
 bool EntityCollisionCheck(Entity *a, Vector2 pos) {
-  return CheckCollisionRecs(
-      (Rectangle){a->position.x, a->position.y, BLOCK_SIZE, BLOCK_SIZE},
-      (Rectangle){pos.x, pos.y, BLOCK_SIZE, BLOCK_SIZE});
+  return a->position.x == pos.x && a->position.y == pos.y;
 }
 
 enum Direction { DIR_UP = 0, DIR_DOWN = 1, DIR_LEFT = 2, DIR_RIGHT = 3 };
@@ -73,6 +88,7 @@ void TailFree(Tail *tail) {
     free(tail);
     tail = next;
   }
+  tail = NULL;
 }
 
 typedef struct {
@@ -87,16 +103,16 @@ void SnakeMove(Snake *self, enum Direction dir) {
   Vector2 pos = self->entity.position;
   switch (dir) {
   case DIR_UP:
-    pos.y -= BLOCK_SIZE;
+    pos.y -= 1;
     break;
   case DIR_DOWN:
-    pos.y += BLOCK_SIZE;
+    pos.y += 1;
     break;
   case DIR_LEFT:
-    pos.x -= BLOCK_SIZE;
+    pos.x -= 1;
     break;
   case DIR_RIGHT:
-    pos.x += BLOCK_SIZE;
+    pos.x += 1;
     break;
   }
   Tail *tail = self->tail;
@@ -113,43 +129,31 @@ void SnakeMove(Snake *self, enum Direction dir) {
 void SnakeUpdate(Snake *self, float delta) {
   self->moveTimer -= delta;
 
-  const Rectangle screenBounds = {
-      .x = 0, .y = 0, .width = GetScreenWidth(), .height = GetScreenHeight()};
-
   enum Direction lastDir = self->dir;
   self->dir = GetMoveDirection(self->dir);
 
   Entity *e = &self->entity;
 
-  // only run every 0.5 seconds
+  // only run every BoundsCollisionCheck seconds
   if (self->moveTimer <= 0) {
-    self->moveTimer = 0.25f;
+    self->moveTimer = MOVE_LATENCY;
     SnakeMove(self, self->dir);
   }
 
-  EntityClamp(e, screenBounds);
+  EntityClamp(e);
   if (TailCollisionCheck(self->tail, e->position) ||
       (self->points > 0 && isInvertedDirection(self->dir, lastDir)) ||
-      BoundsCollisionCheck(e->position, screenBounds)) {
+      BoundsCollisionCheck(e->position)) {
     self->points = 0;
-    self->entity.position =
-        (Vector2){GetScreenWidth() / 2, GetScreenHeight() / 2};
-    Tail *tail = self->tail;
-    while (tail) {
-      Tail *next = tail->next;
-      free(tail);
-      tail = next;
-    }
-    self->tail = NULL;
+    self->entity.position = (Vector2){5, 5};
+    TailFree(self->tail);
+    self->tail = NULL; // the player stuct needs this to be NULL too
   }
 }
 
 void SnakeEat(Snake *self, Entity *food) {
-  if (CheckCollisionRecs((Rectangle){self->entity.position.x,
-                                     self->entity.position.y, BLOCK_SIZE,
-                                     BLOCK_SIZE},
-                         (Rectangle){food->position.x, food->position.y,
-                                     BLOCK_SIZE, BLOCK_SIZE})) {
+  if (self->entity.position.x == food->position.x &&
+      self->entity.position.y == food->position.y) {
     self->points++;
     if (!self->tail) {
       self->tail = malloc(sizeof(Tail));
@@ -165,13 +169,10 @@ void SnakeEat(Snake *self, Entity *food) {
       tail->next->next = NULL;
     }
 
-    Vector2 MaxCoords = {(GetScreenWidth() - BLOCK_SIZE) / BLOCK_SIZE,
-                         (GetScreenHeight() - BLOCK_SIZE) / BLOCK_SIZE};
-
     int overlaps = 1;
     while (overlaps) {
-      food->position = (Vector2){GetRandomValue(1, MaxCoords.x) * BLOCK_SIZE,
-                                 GetRandomValue(1, MaxCoords.y) * BLOCK_SIZE};
+      food->position = (Vector2){GetRandomValue(0, GAME_DIMENSIONS - 1),
+                                 GetRandomValue(1, GAME_DIMENSIONS - 1)};
       // check if the food is not on the snake (or any tail part)
       const Vector2 pos = self->entity.position;
       if (!EntityCollisionCheck(food, pos) &&
@@ -197,8 +198,8 @@ void SnakeDraw(Snake *self) {
     }
     lastPos = tail->position;
     Color c = useDefaultColor ? c1 : c2;
-    DrawRectangle(tail->position.x, tail->position.y, BLOCK_SIZE, BLOCK_SIZE,
-                  c);
+    DrawRectangle(tail->position.x * PIXEL_SIZE, tail->position.y * PIXEL_SIZE,
+                  PIXEL_SIZE, PIXEL_SIZE, c);
     tail = tail->next;
   }
 }
@@ -209,8 +210,10 @@ void SnakeDraw(Snake *self) {
 int main(void) {
   // Initialization
   //--------------------------------------------------------------------------------------
-  const int screenWidth = BLOCK_SIZE * 10;
-  const int screenHeight = BLOCK_SIZE * 10;
+  const int screenWidth = fmax(PIXEL_SIZE * GAME_DIMENSIONS, FOOTER_WIDTH);
+  const int screenHeight = PIXEL_SIZE * GAME_DIMENSIONS + FOOTER_HEIGHT;
+
+  Rectangle inputRect = {10, screenHeight - FOOTER_HEIGHT + 40, 200, 25};
 
   const Color COLOR_GRASS = (Color){0, 255, 0, 255};
 
@@ -219,17 +222,15 @@ int main(void) {
   SetTargetFPS(60); // Set our game to run at 60 frames-per-second
   //--------------------------------------------------------------------------------------
 
-  const Vector2 center = {screenWidth / 2.0f, screenHeight / 2.0f};
-
   Snake player = {
-      .entity = (Entity){.position = center, .color = PURPLE},
+      .entity = (Entity){.position = (Vector2){5, 5}, .color = PURPLE},
       .dir = DIR_RIGHT,
       .points = 0,
       .tail = NULL,
   };
 
   Entity fruit = {
-      .position = (Vector2){BLOCK_SIZE * 4, BLOCK_SIZE * 4},
+      .position = (Vector2){4, 4},
       .color = RED,
   };
 
@@ -254,6 +255,16 @@ int main(void) {
 
     SnakeDraw(&player);
 
+    DrawRectangle(0, screenHeight - FOOTER_HEIGHT, screenWidth, FOOTER_HEIGHT,
+                  BLACK);
+    DrawRectangle(0, screenHeight - FOOTER_HEIGHT + FOOTER_MARGIN, screenWidth,
+                  FOOTER_HEIGHT - FOOTER_MARGIN, RAYWHITE);
+
+    // DrawText(TextFormat("Points: %d", player.points), 10,
+    //          screenHeight - FOOTER_HEIGHT + 10, 20, BLACK);
+
+    DrawRectangleRec(inputRect, LIGHTGRAY);
+
     EndDrawing();
     //----------------------------------------------------------------------------------
   }
@@ -262,6 +273,7 @@ int main(void) {
   //--------------------------------------------------------------------------------------
   CloseWindow();         // Close window and OpenGL context
   TailFree(player.tail); // free memory
+  player.tail = NULL;
   //--------------------------------------------------------------------------------------
 
   return 0;
