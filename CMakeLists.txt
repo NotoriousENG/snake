@@ -5,7 +5,9 @@ find_package(raylib 3.0 REQUIRED) # Requires at least version 3.0
 
 set(CMAKE_C_STANDARD 11) # Requires C11 standard
 
-add_executable(${PROJECT_NAME} src/game.c)
+add_executable(${PROJECT_NAME} "./src/game.c" "./src/entity.c" "./src/tail.c" "./src/snake.c" "./src/input.c" "./src/ui.c")
+
+target_include_directories(${PROJECT_NAME} PRIVATE "./include")
 
 target_link_libraries(${PROJECT_NAME} raylib)
 
