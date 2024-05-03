@@ -77,7 +77,6 @@ int main(void) {
   Snake player = {
       .entity = (Entity){.position = (Vector2){5, 5}, .color = PURPLE},
       .dir = DIR_RIGHT,
-      .lastDir = DIR_RIGHT,
       .points = 0,
       .tail = NULL,
   };

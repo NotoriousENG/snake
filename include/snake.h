@@ -7,7 +7,6 @@
 typedef struct Snake {
   Entity entity;
   enum Direction dir;
-  enum Direction lastDir;
   float moveTimer;
   int points;
   Tail *tail;

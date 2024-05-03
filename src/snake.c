@@ -46,10 +46,8 @@ void SnakeReset(Snake *self) {
 
 void SnakeUpdate(Snake *self, float delta, int latency_ms, int bounds) {
   self->moveTimer -= delta;
-  self->dir = GetMoveDirection(self->lastDir);
-  if (self->points > 0 && isInvertedDirection(self->dir, self->lastDir)) {
-    self->dir = self->lastDir; // don't allow bw movement
-  }
+  float lastDir = self->dir;
+  self->dir = GetMoveDirection(self->dir);
 
   Entity *e = &self->entity;
 
@@ -57,12 +55,12 @@ void SnakeUpdate(Snake *self, float delta, int latency_ms, int bounds) {
   if (self->moveTimer <= 0) {
     self->moveTimer = latency_ms / 1000.0f;
     SnakeMove(self, self->dir);
-    self->lastDir = self->dir;
   }
 
   EntityClamp(e, bounds);
   if (TailCollisionCheck(self->tail, e->position) ||
-      boundsContainsPosition(e->position, bounds)) {
+      boundsContainsPosition(e->position, bounds) ||
+      (self->points > 0 && isInvertedDirection(self->dir, lastDir))) {
     SnakeReset(self);
   }
 }
